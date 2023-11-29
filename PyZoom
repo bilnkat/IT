@@ -1,0 +1,164 @@
+import os
+
+import jwt
+import requests
+from time import time
+import logging
+import pandas as pd
+from datetime import datetime
+import csv
+
+class Pyzoom:
+
+    def __init__(self, api_key, api_secret):
+        self._api_key = api_key
+        self._api_secret = api_secret
+        self._domain = 'https://api.zoom.us'
+        self._version = '/v2'
+        self._headers = {'authorization': 'Bearer' + self._generateToken(),
+                         'content-type': 'application/json; charset=utf-8'}
+        self.all_users = self._get_all_users()
+
+
+    #################################### Helper functions ###########################################
+
+
+    # Create a function to generate a token using the pyjwt library
+    def _generateToken(self):
+        token = jwt.encode(
+
+            # Create a payload of the token containing
+            # API Key & expiration time
+            {'iss': self._api_key, 'exp': time() + 5000},
+
+            # Secret used to generate token signature
+            self._api_secret,
+
+            # Specify the hashing alg
+            algorithm='HS256'
+        )
+        return token
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+        return lst
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _request_get(self, endpoint):
+        x = requests.get(url=self._domain + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _request_put(self, endpoint, payload):
+        x = requests.put(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_patch(self, endpoint, payload):
+        x = requests.patch(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._domain + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _get_all_users(self):
+        endpoint = '/users?page_size=300'
+        x = self._request_get(endpoint)
+        user_list = [users for users in x.json()['users']]
+        return user_list
+
+    #################################### Main functions ###########################################
+
+    def get_userId_from_email(self, email):
+        for each in self.all_users:
+            if each['email'].lower() == email:
+                return each['id']
+
+
+    def change_user_email(self, old_email, new_email):
+        userId = self.get_userId_from_email(old_email)
+        endpoint = f'/users/{userId}/email'
+        payload = {
+          "email": f"{new_email}"
+        }
+        self._request_put(endpoint, payload)
+
+    def get_all_users_to_csv(self):
+        new_list = [self._flatten_json(each) for each in self.all_users]
+        self._data_to_csv(new_list, 'Zoom_Users')
+
+    def assign_license_to_user_by_userId(self, userId):
+        endpoint = f'/users/{userId}'
+        payload = {
+            "type":2
+        }
+        self._request_patch(endpoint, payload)
+
+    def assign_license_to_user_by_email(self, email):
+        userId = self.get_userId_from_email(email)
+        self.assign_license_to_user_by_userId(userId)
+
+    def assign_license_to_users_by_csv(self, csv_file_of_emails):
+        x = self._csv_to_list(csv_file_of_emails)
+        for each in x:
+            self.assign_license_to_user_by_email(each)
+
+    def change_user_email_from_csv(self, csv_file):
+        x = self._csv_to_list(csv_file)
+        for each in x:
+            x = self.change_user_email(each[0], each[1])
+            try:
+                print(each[0], each[1])
+            except Exception as e:
+                print(e)
+
+zoom_key = os.environ['ZOOM_KEY']
+zoom_sec = os.environ['ZOOM_SEC']
+
+
+my_Pyzoom = Pyzoom(zoom_key, zoom_sec)
+my_Pyzoom.get_all_users_to_csv()
