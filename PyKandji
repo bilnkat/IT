@@ -1,0 +1,160 @@
+import requests
+import json
+import pandas as pd
+import logging
+from datetime import datetime
+import csv
+from pprint import pprint
+import os
+
+
+
+class PyKandji:
+
+    # Init function
+    def __init__(self, token):
+        self._domain = 'https://example.clients.us-1.kandji.io/api'
+        self._version = '/v1'
+        self._headers = {'Authorization':f'Bearer {token}'}
+        self.all_devices = self._get_all_devices()
+        self.all_blueprints = self._get_all_blueprints()
+
+    #################################### Helper methods ###########################################
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+            new_list = [each[0] for each in lst]
+        return new_list
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _request_get(self, endpoint):
+        x = requests.get(url=self._domain + self._version + endpoint, headers=self._headers)
+        print(x)
+        self._error_check(x)
+        return x
+
+    def _request_put(self, endpoint, payload):
+        x = requests.put(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_patch(self, endpoint, payload):
+        x = requests.patch(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._domain + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _get_all_devices(self):
+        device_list = []
+        endpoint_1 = '/devices'
+        endpoint_2 = '/devices?limit=300&offset=300'
+        e1 = self._request_get(endpoint_1)
+        device_list.extend(e1.json())
+        e2 = self._request_get(endpoint_2)
+        device_list.extend(e2.json())
+        return device_list
+
+    def _get_all_blueprints(self):
+        endpoint = '/blueprints'
+        x = self._request_get(endpoint)
+        return x.json()['results']
+
+    #################################### Class methods ###########################################
+
+    def get_all_devices_to_csv(self):
+        new_list = [self._flatten_json(each) for each in self.all_devices]
+        self._data_to_csv(new_list, 'Kandji')
+
+    def get_deviceId_from_serial(self, sn):
+        for each in self.all_devices:
+            if each['serial_number'] == sn:
+                return each['device_id']
+
+    def get_devices_serial_by_email(self, email):
+        user_devices = []
+        for device in self.all_devices:
+            try:
+                if device['user']['email'] == email:
+                    user_devices.append(device['serial_number'])
+            except Exception as e:
+                print(e)
+        return user_devices
+
+    def get_devices_Id_by_email(self, email):
+        user_devices = []
+        for device in self.all_devices:
+            try:
+                if device['user']['email'] == email:
+                    user_devices.append(device['device_id'])
+            except Exception as e:
+                print(e)
+        return user_devices
+
+    def change_device_blueprint_by_deviceId(self, deviceId, blueprintId):
+        endpoint = f'/devices/{deviceId}'
+        payload = {
+            "blueprint_id": f"{blueprintId}"
+        }
+        self._request_patch(endpoint, payload)
+    def change_devices_blueprint_by_email(self, email, blueprintId):
+        for each in self.get_devices_Id_by_email(email):
+            self.change_device_blueprint_by_deviceId(each, blueprintId)
+
+    def change_devices_blueprint_by_csv(self, csv_file_of_emails, blueprintId):
+        for each in self._csv_to_list(csv_file_of_emails):
+            self.change_devices_blueprint_by_email(each, blueprintId)
+
+    def get_blueprint_list(self):
+        endpoint = '/blueprints'
+        return self._request_get(endpoint).json()['results']
+
+api_key = os.environ['KANDJI_TOKEN']
+my_kandji = PyKandji(api_key)
+
+x = my_kandji.all_devices
+pprint(x)
