@@ -1,0 +1,357 @@
+import requests
+import logging
+import re
+import csv
+import pandas as pd
+from datetime import datetime
+import os
+from pprint import pprint
+
+class PyOkta:
+    def __init__(self, api_token):
+        self._domain = 'https://shippo.okta.com'
+        self._api_token = api_token
+        self._headers = {'authorization': 'SSWS ' + self._api_token, 'content-type': 'application/json'}
+        self.all_users = self._get_all_users()
+        self.all_groups = self._get_group_list()
+
+    #################################### Helper functions ###########################################
+
+    # For error checking requests
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    # For GET requests
+    def _request_get(self, endpoint):
+        x = requests.get(url=self._domain + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    # For PUT requests
+    def _request_put(self, endpoint):
+        x = requests.put(url=self._domain + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    # For POST requests
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._domain + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    # For DELETE requests
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._domain + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    # For converting a list of dictionaries to csv
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    # For converting csv to a list
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+        return lst
+    # For flattening lists and dictionaries into a 2 by 2 dataframe
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    # Pulls all users on instantiation
+    def _get_all_users(self):
+        global next_page
+        endpoint = '/api/v1/users'
+        okta_userlist = []
+        r = self._request_get(endpoint)
+        okta_userlist.extend(r.json())
+
+        # Get the next page URL
+        pattern = r'<.*?>'
+
+        while 'rel="next"' in r.headers['link']:
+            link = r.headers['link']
+            match = re.findall(pattern, link)
+            for each in match:
+                if 'after=' in each:
+                    next_page = f"{endpoint}?{each[1:-1].split('?')[1]}"
+                    break
+
+            n = self._request_get(next_page)
+            okta_userlist.extend(n.json())
+            return okta_userlist
+
+    # Pulls all groups on instantiation
+    def _get_group_list(self):
+        endpoint = f'/api/v1/groups/'
+        x = self._request_get(endpoint)
+        return x.json()
+
+    #################################### Main functions ###########################################
+
+    # Pulls all users into a csv
+    def get_all_users_to_csv(self):
+        x = self.all_users
+        y = []
+        for each in x:
+            y.append(self._flatten_json(each))
+        self._data_to_csv(y, 'Okta_users')
+
+    # Pulls a user data based on email address
+    def get_user_data_from_email(self, email):
+        x = self.all_users
+        for each in x:
+            try:
+                if each['profile']['login'].lower() == email.lower(): # or each['profile']['secondEmail'].lower() == email.lower():
+                    return each
+            except Exception as e:
+                print(e)
+
+    # Gets user id from email
+    def get_user_id_from_email(self, email):
+        x = self.get_user_data_from_email(email)
+        return x['id']
+
+    # Changes the second email of a user
+    def update_second_email_of_user(self, userId, second_email):
+        endpoint = f'/api/v1/users/{userId}'
+        payload = {
+            "profile": {
+                "secondEmail": second_email
+            }
+        }
+        self._request_post(endpoint, payload)
+
+    # Changes the second email from a list of Google users
+    def update_second_email_from_google_userList(self, google_userList):
+        count = 0
+        for okta_user in self.all_users:
+            for google_user in google_userList:
+                if okta_user['profile']['login'] == google_user['Secondary Email']:
+                    userID = okta_user['id']
+                    google_user_primary_email = google_user['Primary Email']
+                    try:
+                        if okta_user['profile']['secondEmail'] == None:
+                            # print(f"ID: {userID}, Okta: {okta_user['profile']['login']}, Google: {google_user['Primary Email']}")
+                            self.update_second_email_of_user(userID, google_user_primary_email)
+                            count = count + 1
+                    except Exception as e:
+                        print(e)
+                    break
+                else:
+                    continue
+        print(count)
+
+    # Adds a user to group based on ID
+    def add_user_to_group_by_userid(self, groupId, userId):
+        endpoint = f'/api/v1/groups/{groupId}/users/{userId}'
+        self._request_put(endpoint)
+
+    # Adds a user to group based on email
+    def add_user_to_group_by_email(self, groupId, email):
+        userData = self.get_user_data_from_email(email)
+        if userData is not None:
+            userId = userData['id']
+            self.add_user_to_group_by_userid(groupId, userId)
+
+    # Adds users to group based listed in a csv
+    def add_users_to_group_from_csv(self, groupId, csvfile):
+        x = self._csv_to_list(csvfile)
+        for each in x:
+            email = each[0]
+            self.add_user_to_group_by_email(groupId, email)
+
+    # Removes a user from group based on ID
+    def remove_user_from_group_by_id(self, groupId, userId):
+        endpoint = f'/api/v1/groups/{groupId}/users/{userId}'
+        self._request_delete(endpoint)
+
+    # Removes a user from group based on email
+    def remove_user_from_group_by_email(self, groupId, email):
+        userData = self.get_user_data_from_email(email)
+        userId = userData['id']
+        self.remove_user_from_group_by_id(groupId, userId)
+
+    # Removes users from group listed in a csv
+    def remove_users_from_group_from_csv(self, groupId, csv_file_of_emails):
+        x = self._csv_to_list(csv_file_of_emails)
+        for each in x:
+            email = each[0]
+            self.remove_user_from_group_by_email(groupId, email)
+
+    # Gets group ID from group name
+    def get_group_id_by_group_name(self, groupName):
+        y = [x['id'] for x in self.all_groups if groupName == x['profile']['name']]
+        return y[0]
+
+    # Gets group members in a group name
+    def get_group_members_by_group_name(self, groupName):
+        x = self.get_group_id_by_group_name(groupName)
+        endpoint = f'/api/v1/groups/{x}/users'
+        r = self._request_get(endpoint)
+        z = [y['profile']['login'] for y in r.json()]
+        return z
+
+    # Gets group members in a group name into a csv
+    def get_group_members_by_group_name_to_csv(self, groupName):
+        x = self.get_group_members_by_group_name(groupName)
+        self._data_to_csv(x, groupName)
+
+    # Gets group names that matches the string pattern
+    def get_group_names_by_pattern_match(self, pattern):
+        y = [x['profile']['name'] for x in self.all_groups if pattern in x['profile']['name']]
+        return y
+
+    # Gets group members in a group name into a csv
+    def get_group_members_to_csv_by_group_name_pattern_match(self, pattern):
+        x = self.get_group_names_by_pattern_match(pattern)
+        for each in x:
+            self.get_group_members_by_group_name_to_csv(each)
+
+    # Gets group memberships of a user
+    def get_user_group_memberships(self, email, groupFilter=''):
+        userData = self.get_user_data_from_email(email)
+        if userData is not None:
+            userId = userData['id']
+            endpoint = f'/api/v1/users/{userId}/groups'
+            try:
+                y = [z['profile']['name'] for z in self._request_get(endpoint).json() if groupFilter in z['profile']['name']]
+                return y
+            except Exception as e:
+                print(e)
+
+    # Gets user data + groups based on email
+    def get_user_audit_from_email(self, email, groupFilter=''):
+        x = self.get_user_data_from_email(email)
+        y = self.get_user_group_memberships(email, groupFilter)
+        if x is not None and y is not None:
+            try:
+                return {
+                    'id': x['id'],
+                    'fullname': f"{x['profile']['firstName']} {x['profile']['lastName']}",
+                    'email': x['profile']['email'],
+                    'secondary_email': x['profile']['secondEmail'],
+                    'groups': str(y)
+                }
+            except Exception as e:
+                print(e)
+
+    # Gets user data + groups based on a list in a csv
+    def get_user_audit_from_csv(self, fileName, groupFilter=''):
+        x = self._csv_to_list(fileName)
+        tmp = []
+        for each in x:
+            y = self.get_user_audit_from_email(each[0], groupFilter)
+            tmp.append(y)
+        return tmp
+
+    # Gets user data + groups based on a list in a csv exported into another csv
+    def get_user_audit_from_csv_to_csv(self, fileName, groupFilter=''):
+        x = self.get_user_audit_from_csv(fileName, groupFilter)
+        y = []
+        for each in x:
+            y.append(self._flatten_json(each))
+        self._data_to_csv(y, f'Okta_user_groups_filtered_by_{groupFilter}')
+
+    # Gets members of filtered groups
+    def get_users_in_groups_with_this_filter(self, groupFilter='', filter=True):
+        x = self.all_users
+        tmp = []
+        for each in x:
+            user = {
+                'id': each['id'],
+                'fullname': f"{each['profile']['firstName']} {each['profile']['lastName']}",
+                'email': each['profile']['email'],
+                'secondary_email': each['profile']['secondEmail'],
+            }
+            email = each['profile']['email']
+            y = self.get_user_group_memberships(email, '')
+            if y is not None:
+                for group in y:
+                    if groupFilter in group:
+                        if filter is True:
+                            lst = [z for z in y if groupFilter in z]
+                            user['groups'] = lst
+                            tmp.append(user)
+                        else:
+                            user['groups'] = y
+                            tmp.append(user)
+                        break
+        return tmp
+
+    # Gets members of filtered groups into csv
+    def get_users_in_groups_with_this_filter_to_csv(self, groupFilter='', filter=True):
+        x = self.get_users_in_groups_with_this_filter(groupFilter, filter)
+        self._data_to_csv(x, f'Okta_users_with_groups_filtered_by_{groupFilter}')
+
+    # Gets app data based on app name
+    def get_app_from_app_name(self, appName):
+        endpoint = f'/api/v1/apps/?q={appName}'
+        x = self._request_get(endpoint)
+        return x.json()[0]
+
+    # Gets app ID based on app name
+    def get_app_id_from_app_name(self,appName):
+        x = self.get_app_from_app_name(appName)
+        return x['id']
+
+    # Gets users using the app based on app name
+    def get_users_from_app_name(self, appName):
+        x = self.get_app_id_from_app_name(appName)
+        endpoint = f'/api/v1/apps/{x}/users?limit=2000'
+        y = self._request_get(endpoint)
+        return y.json()
+
+    # Gets users using the app based on app name into csv
+    def get_users_from_app_name_to_csv(self, appName):
+        x = self.get_users_from_app_name(appName)
+        z = [self._flatten_json(y) for y in x]
+        print(len(z))
+        self._data_to_csv(z, f'{appName}_users')
+
+    # Gets user's apps from email
+    def get_apps_from_user_email(self, email):
+        x = self.get_user_id_from_email(email)
+        endpoint = f'/api/v1/users/{x}/appLinks'
+        y = self._request_get(endpoint)
+        return y.json()
+
+    # Gets user's apps from email to csv
+    def get_apps_from_user_email_to_csv(self, email):
+        x = self.get_apps_from_user_email(email)
+        self._data_to_csv(x, email)
+
+
+
+
+key = os.environ['OKTA_API_KEY']
+my_PyOkta = PyOkta(key)
+
+x = my_PyOkta.get_all_users_to_csv()
