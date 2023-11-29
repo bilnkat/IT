@@ -1,0 +1,189 @@
+import os
+
+import requests
+from time import sleep
+import re
+import logging
+from datetime import datetime
+import csv
+import pandas as pd
+from pprint import pprint
+
+
+class PySlack:
+    def __init__(self, token):
+        self._domain = 'https://slack.com/api'
+        self._version = ''
+        self._headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type":"application/json; charset=utf-8"
+        }
+        self.all_users = self._get_user_list()
+
+    #################################### Helper functions ###########################################
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+        return lst
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _request_get(self, endpoint):
+        x = requests.get(url=self._domain + self._version + endpoint, headers=self._headers)
+        return x
+
+    def _request_put(self, endpoint, payload):
+        x = requests.put(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_patch(self, endpoint, payload):
+        x = requests.patch(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._domain + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._domain + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+            if response.status_code == 429:
+                return 429
+            return True
+        else:
+            print('Success: ', response.status_code, response.url)
+            return False
+
+    def _wait(self, num):
+        print(f'Rate limit reached...Retrying in {num} seconds...')
+        sleep(num)
+
+    def _try_retry(self, num, func, **kwargs, ):
+        x = func(**kwargs)
+        while self._error_check(x) == 429:
+            self._wait(num)
+            x = func(**kwargs)
+        return x
+
+    def _get_next_page_token(self, response, *nextPageTokenKeys):
+        global x
+        length = len(nextPageTokenKeys)
+        lst = list(nextPageTokenKeys)
+        for i in range(length):
+            response = response[lst[i]]
+            x = response
+        return x
+
+    def _get_next_page(self, response, nextPageToken):
+        x = self._try_retry(5, requests.get, headers=self._headers, url=response.url, params={'cursor':nextPageToken})
+        return x
+
+    def _get_user_list(self):
+        tmp = []
+        endpoint = '/users.list?pretty=1'
+        x = self._try_retry(5, self._request_get, endpoint=endpoint)
+        tmp.extend(x.json()['members'])
+        next_page_token = self._get_next_page_token(x.json(), 'response_metadata', 'next_cursor')
+        while next_page_token:
+            next_page = self._get_next_page(x, next_page_token)
+            tmp.extend(next_page.json()['members'])
+            next_page_token = self._get_next_page_token(next_page.json(), 'response_metadata', 'next_cursor')
+        return tmp
+
+    #################################### Main functions ###########################################
+
+    def get_id_from_email(self, email):
+        for each in self.all_users:
+            try:
+                if each['profile']['email'] == email:
+                    return each['id']
+            except Exception as e:
+                print(e)
+
+    def get_list_of_emails(self):
+        email_list = []
+        for each in self.all_users:
+            try:
+                email_list.append(each['profile']['email'])
+            except Exception as e:
+                print(e)
+        return email_list
+
+    def change_user_email(self, old_email, new_email):
+        endpoint = '/users.profile.set?pretty=1'
+        id = self.get_id_from_email(old_email)
+        payload = {
+                            "profile": {
+                                "email": f"{new_email}"
+                            },
+                            "user": f"{id}"
+                        }
+        x = self._request_post(endpoint, payload)
+        return x
+
+    def change_user_email_domain(self, current_email, new_domain):
+        new_email = current_email.split('@')[0] + '@' + new_domain
+        self.change_user_email(current_email, new_email)
+
+    def change_multiple_users_email_domain(self, old_domain, new_domain):
+        if old_domain.lower() != "all":
+            for each in self.all_users:
+                try:
+                    if bool(re.search(old_domain, each['profile']['email'])):
+                        self.change_user_email_domain(each['profile']['email'], new_domain)
+                except Exception as e:
+                    print(e)
+        elif old_domain.lower() == "all":
+            for each in self.all_users:
+                try:
+                    self.change_user_email_domain(each['profile']['email'], new_domain)
+                except Exception as e:
+                    print(e)
+
+    def get_all_users_to_csv(self):
+        lst = [self._flatten_json(each) for each in self.all_users]
+        self._data_to_csv(lst, 'Slack')
+
+key = os.environ['XOXP']
+my_Pyslack = PySlack(key)
+
+x = my_Pyslack.all_users
+pprint(x)
+pprint(len(x))
