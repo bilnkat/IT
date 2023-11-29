@@ -1,0 +1,93 @@
+import requests
+from base64 import b64encode
+from datetime import datetime, timedelta
+import pandas as pd
+import logging
+import os
+from pprint import pprint
+
+class Pymode:
+
+    def __init__(self, username, password):
+        self.host     = 'https://app.mode.com'
+        self.username = username
+        self.password = password
+        self.ws = 'example'
+        self.username_pw = f'{self.username}:{self.password}'.encode('utf-8')
+        self.basic_auth_creds = b64encode(self.username_pw)
+        self.signature_token = self._get_signature_token()
+        self.token = self.signature_token['token']
+        self.access_key = self.signature_token['access_key']
+        self.access_secret = self.signature_token['access_secret']
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _get_signature_token(self):
+        signature_token_url = f"https://app.mode.com/batch/{self.ws}/signature_tokens"
+        headers = {
+            "Authorization": f"Basic {self.basic_auth_creds}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        form_data = {
+            "signature_token": {
+                "name": "batch_api_name",
+                "expires_at": (datetime.now() + timedelta(hours=24)).isoformat()[0:19] + '+0000',
+                "auth_scope": {
+                    "authentication_for": "batch-api",
+                    "authorization_type": "read-only"
+                }
+            }
+        }
+        r = requests.post(url=signature_token_url, headers=headers, json=form_data, auth=(self.username, self.password))
+        return r.json()
+
+    def _get_userlist(self):
+        decoded_token = self.token + ':' + self.access_key + ':' + self.access_secret
+        encoded_token = b64encode(decoded_token.encode('utf-8'))
+        bearer_token = 'Bearer ' + encoded_token.decode('utf-8')
+        members_url = f"https://app.mode.com/batch/{self.ws}/members"
+        headers = {
+            "Authorization": bearer_token,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        r = requests.get(url=members_url, headers=headers)
+        return r.json()['memberships']
+
+    def get_userlist_to_csv(self):
+        x = [self._flatten_json(member) for member in self._get_userlist()]
+        self._data_to_csv(x, 'Mode')
+
+
+mode_username = os.environ['MODE_USERNAME']
+mode_password = os.environ['MODE_PASSWORD']
+
+my_pymode = Pymode(mode_username, mode_password)
+my_pymode.get_userlist_to_csv()
