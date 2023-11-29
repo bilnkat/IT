@@ -1,0 +1,229 @@
+from __future__ import print_function
+import requests
+import os.path
+import logging
+import csv
+import pandas as pd
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from pprint import pprint
+from datetime import datetime
+
+
+class PyGoogle:
+
+    def __init__(self, customerId, domain=None):
+        self._scope = ['https://www.googleapis.com/auth/admin.directory.group',
+                       'https://www.googleapis.com/auth/admin.directory.user',
+                       'https://www.googleapis.com/auth/admin.directory.user']
+        self._base_url = f'https://admin.googleapis.com/admin/directory'
+        self._version = '/v1'
+        self._domain = domain
+        self._customer_id = customerId
+        self._client_sercrets = 'main_credentials.json'                          # Originally main_credentials.json
+        self._token = self._get_token()
+        self._headers = {'Authorization': f'Bearer {self._token}'}
+        self.all_groups = self._get_all_groups()
+        self.all_users = self._get_all_users()
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+        return lst
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _request_get(self, endpoint):
+        x = requests.get(url=self._base_url + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _request_put(self, endpoint, payload):
+        x = requests.put(url=self._base_url + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_patch(self, endpoint, payload):
+        x = requests.patch(url=self._base_url + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._base_url + self._version + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._base_url + self._version + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+
+    def _get_token(self):
+        SCOPES = self._scope
+        creds = None
+        # The file token.json stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self._client_sercrets, SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+        return creds.token
+
+    def _get_all_groups(self):
+        tmp = []
+        if self._domain:
+            endpoint = f'/groups?customer={self._customer_id}&domain={self._domain}'
+        else:
+            endpoint = f'/groups?customer={self._customer_id}'
+        x = self._request_get(endpoint)
+        try:
+            tmp.extend(x.json()['groups'])
+        except Exception as e:
+            print(e)
+        self._get_next_page(x, tmp)
+        return tmp
+
+    def get_all_groups_to_csv(self):
+        x = self._get_all_groups()
+        tmp = [self._flatten_json(x) for x in x]
+        self._data_to_csv(tmp, f'Google_Groups_{self._domain}')
+        return tmp
+
+    def _get_next_page(self, response, lst):
+        while 'nextPageToken' in response.json().keys():
+            response = requests.get(url=response.url, headers=self._headers, params={'pageToken': f'{response.json()["nextPageToken"]}'})
+            lst.extend(response.json()['groups'])
+
+    def _get_group_id_from_email(self, groupEmail):
+        for each in self.all_groups:
+            if groupEmail in each['email']:
+                return each['id']
+
+    def change_email_of_a_group_by_id(self, groupId, targetEmail):
+        endpoint = f'/groups/{groupId}'
+        payload = {'email': f'{targetEmail}'}
+        x = self._request_patch(endpoint, payload)
+        return x
+
+    def change_email_of_a_group_by_email(self, currentEmail, targetEmail):
+        group_id = self._get_group_id_from_email(currentEmail)
+        if id:
+            endpoint = f'/groups/{group_id}'
+        else:
+            return None
+        payload = {'email':f'{targetEmail}'}
+        x = self._request_patch(endpoint, payload)
+        return x
+
+    def change_domain_for_all_groups(self, domain):
+        for each in self.all_groups:
+            email = each['email']
+            prefix = email.split('@')[0]
+            new_email = prefix + f'@{domain}'
+            group_id = each['id']
+            self.change_email_of_a_group_by_id(group_id, new_email)
+
+    def _get_all_users(self):
+        tmp = []
+        endpoint = f'/users?domain={self._domain}&maxResults=500'
+        x = self._request_get(endpoint)
+        tmp.extend(x.json()['users'])
+        try:
+            while x.json()['nextPageToken']:
+                nextPageToken = x.json()['nextPageToken']
+                x = self._request_get(endpoint + f'&pageToken={nextPageToken}')
+                tmp.extend(x.json()['users'])
+        except Exception as e:
+            print(e)
+        return tmp
+
+    def change_email(self, current_email, target_email):
+        endpoint = f'/users/{current_email}'
+        payload = {
+            "primaryEmail": target_email
+        }
+        try:
+            x = self._request_patch(endpoint, payload)
+            return x.json()
+        except Exception as e:
+            print(e)
+
+    def change_emails_from_csv(self, csv_file):
+        x = self._csv_to_list(csv_file)
+        for each in x:
+            x = self.change_email(each[0], each[1])
+            try:
+                print(each[0], x.text)
+            except Exception as e:
+                print(e)
+
+    def delete_alias_from_email(self, email, alias):
+        endpoint = f'/users/{email}/aliases/{alias}'
+        x = self._request_delete(endpoint)
+        return x
+
+    def delete_matching_alias_from_email(self, email, pattern):
+        for user in self.all_users:
+            if user['primaryEmail'] == email:
+                for alias in user['aliases']:
+                    if pattern in alias:
+                        print(alias)
+                        # self.delete_alias_from_email(email, alias)
+
+
+
+my_pygoogle = PyGoogle('','example.com')
