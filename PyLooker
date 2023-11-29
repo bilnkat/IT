@@ -1,0 +1,74 @@
+import requests
+import csv
+import os
+
+class PyLooker:
+
+    def __init__(self, clientID, clientSecret):
+        self._client_id = clientID
+        self._client_secret = clientSecret
+        self._domain = 'example'
+        self._api_url = f'https://{self._domain}.looker.com:443/api/3.1'
+        self._token = self._get_token()
+        self._headers = {'Authorization': f'token {self._token}', }
+        self.all_users = self._get_all_users()
+
+    def _request_get(self, endpoint, headers):
+        r = requests.get(url=self._api_url + endpoint, headers=headers)
+        return r
+
+    def _request_post(self, endpoint, headers, payload):
+        r = requests.post(url=self._api_url + endpoint, headers=headers, data=payload)
+        return r
+
+    def _request_patch(self, endpoint, headers, payload):
+        r = requests.patch(url=self._api_url + endpoint, headers=headers, json=payload)
+        return r
+
+    def _get_token(self):
+        endpoint = '/login'
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+        payload = {
+            'client_id':self._client_id,
+            'client_secret': self._client_secret
+        }
+        x = self._request_post(endpoint, headers, payload)
+        return x.json()['access_token']
+
+    def _get_all_users(self):
+        endpoint = '/users'
+        x = self._request_get(endpoint, self._headers)
+        return x.json()
+
+    def get_id_from_email(self, email):
+        for each in self.all_users:
+            if each['email'] == email:
+                return each['id']
+
+    def change_email_from_id(self, id, email):
+        endpoint = f'/users/{id}/credentials_email'
+        payload = {'email':email}
+        x = self._request_patch(endpoint, self._headers, payload)
+        return x.json()
+
+    def change_email_from_to(self, from_email, to_email):
+        id = self.get_id_from_email(from_email)
+        x = self.change_email_from_id(id, to_email)
+        return x
+
+    def get_emails_from_csv(self, csv_file):
+        with open(csv_file, 'r') as csvfile:
+            file = csv.reader(csvfile)
+            lst = [(x[0], x[1]) for x in file]
+            return lst
+
+    def change_emails_from_csv(self, csv_file):
+        lst = self.get_emails_from_csv(csv_file)
+        for each in lst:
+            x = self.change_email_from_to(each[0], each[1])
+            print(x)
+
+
+looker_id = os.environ['LOOKER_ID']
+looker_secret = os.environ['LOOKER_SECRET']
+my_PyLooker = PyLooker(looker_id, looker_secret)
