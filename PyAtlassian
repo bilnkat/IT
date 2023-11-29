@@ -1,0 +1,141 @@
+# This code sample uses the 'requests' library:
+# http://docs.python-requests.org
+import os
+import csv
+from datetime import datetime
+import requests
+import logging
+import pandas as pd
+from pprint import pprint
+
+
+
+class PyAtlassian:
+
+    def __init__(self, token):
+        self._url = "https://api.atlassian.com"
+        self._headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+        self._org_id = self._get_org_id()
+        self.all_users = self._get_all_users()
+
+    def _flatten_json(self, y):
+        out = {}
+        try:
+            def flatten(x, name=''):
+                # If the Nested key-value
+                # pair is of dict type
+                if type(x) is dict:
+                    for a in x:
+                        flatten(x[a], name + a + '_')
+                        # If the Nested key-value
+                # pair is of list type
+                elif type(x) is list:
+                    i = 0
+                    for a in x:
+                        flatten(a, name + str(i) + '_')
+                        i += 1
+                else:
+                    out[name[:-1]] = x
+        except Exception as e:
+            error = "flatten_json failed with exception {}".format(e)
+            logging.error(error)
+        flatten(y)
+        return out
+
+    def _csv_to_list(self, csv_file):
+        csv_filename = csv_file
+        with open(csv_filename, encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            lst = list(reader)
+        return lst
+
+    def _data_to_csv(self,data, name):
+        df = pd.DataFrame.from_dict(data)
+        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _request_get(self, endpoint, args=None):
+        x = requests.get(url=self._url + endpoint, headers=self._headers, params=args)
+        self._error_check(x)
+        return x
+
+    def _request_put(self, endpoint, payload):
+        x = requests.put(url=self._url + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._url + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._url + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _get_org_id(self):
+        endpoint = '/admin/v1/orgs'
+        x = self._request_get(endpoint)
+        return x.json()['data'][0]['id']
+
+    def _get_all_users(self):
+        tmp = []
+        endpoint = f'/admin/v1/orgs/{self._org_id}/users'
+        x = self._request_get(endpoint)
+        tmp.extend(x.json()['data'])
+        if x.json()['links']['next']:
+            try:
+                while x.json()['links']['next']:
+                    x = requests.get(url=x.json()['links']['next'], headers=self._headers)
+                    tmp.extend(x.json()['data'])
+            except Exception as e:
+                pass
+        return tmp
+
+    def get_account_id_from_email(self, email):
+        for each in self.all_users:
+            if each['email'] == email:
+                return each['account_id']
+
+    def change_email_from_id(self, accountId, target_email):
+        endpoint = f'/users/{accountId}/manage/email'
+        payload = {
+            "email": target_email
+        }
+        try:
+            x = self._request_put(endpoint, payload)
+            return x
+        except Exception as e:
+            print(e)
+
+    def change_email(self, current_email, target_email):
+        account_id = self.get_account_id_from_email(current_email)
+        x = self.change_email_from_id(account_id, target_email)
+        return x
+
+    def change_emails_from_csv(self, csv_file):
+        x = self._csv_to_list(csv_file)
+        for each in x:
+            x = self.change_email(each[0], each[1])
+            try:
+             print(each[0], x.text)
+            except Exception as e:
+                print(e)
+
+
+
+token = os.environ['ATLASSIAN_TOKEN']
+
+my_pyatlassian = PyAtlassian(token)
+x = my_pyatlassian.all_users
+pprint(x)
+
