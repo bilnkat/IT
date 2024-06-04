@@ -12,9 +12,10 @@ class Pymode:
         self.host     = 'https://app.mode.com'
         self.username = username
         self.password = password
-        self.ws = 'example'
+        self.ws = 'shippo'
         self.username_pw = f'{self.username}:{self.password}'.encode('utf-8')
-        self.basic_auth_creds = b64encode(self.username_pw)
+        self.b64_byte = b64encode(self.username_pw)
+        self.b64_str = self.b64_byte.decode('utf-8')
         self.signature_token = self._get_signature_token()
         self.token = self.signature_token['token']
         self.access_key = self.signature_token['access_key']
@@ -51,7 +52,7 @@ class Pymode:
     def _get_signature_token(self):
         signature_token_url = f"https://app.mode.com/batch/{self.ws}/signature_tokens"
         headers = {
-            "Authorization": f"Basic {self.basic_auth_creds}",
+            "Authorization": f"Basic {self.b64_str}",
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
@@ -85,9 +86,23 @@ class Pymode:
         x = [self._flatten_json(member) for member in self._get_userlist()]
         self._data_to_csv(x, 'Mode')
 
+    def test(self):
+        bearer_token = 'Basic ' + str(self.b64_str)
+        url = f'https://app.mode.com/api/{self.ws}/memberships'
+        headers = {
+            "Authorization": bearer_token,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        r = requests.get(url=url, headers=headers)
+        return r.json()
+
+
+
+
 
 mode_username = os.environ['MODE_USERNAME']
 mode_password = os.environ['MODE_PASSWORD']
-
 my_pymode = Pymode(mode_username, mode_password)
-my_pymode.get_userlist_to_csv()
+x = my_pymode.get_userlist_to_csv()
+pprint(x)
