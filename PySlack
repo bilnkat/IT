@@ -179,11 +179,27 @@ class PySlack:
 
     def get_all_users_to_csv(self):
         lst = [self._flatten_json(each) for each in self.all_users]
-        self._data_to_csv(lst, 'Slack')
+        self._data_to_csv(lst, 'Slack_Users')
+
+    def get_team_access_logs(self):
+        tmp = []
+        endpoint = '/team.accessLogs?limit=999'
+        x = self._try_retry(5, self._request_get, endpoint=endpoint)
+        tmp.extend(x.json()['logins'])
+        next_page_token = self._get_next_page_token(x.json(), 'response_metadata', 'next_cursor')
+        while next_page_token:
+            next_page = self._get_next_page(x, next_page_token)
+            tmp.extend(next_page.json()['logins'])
+            next_page_token = self._get_next_page_token(next_page.json(), 'response_metadata', 'next_cursor')
+        return tmp
+
+    def get_team_access_logs_to_csv(self):
+        lst = [self._flatten_json(each) for each in self.get_team_access_logs()]
+        self._data_to_csv(lst, 'Slack_Logins')
+
 
 key = os.environ['XOXP']
 my_Pyslack = PySlack(key)
 
-x = my_Pyslack.all_users
-pprint(x)
-pprint(len(x))
+x = my_Pyslack.get_team_access_logs_to_csv()
+
