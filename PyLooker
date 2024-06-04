@@ -1,13 +1,14 @@
 import requests
 import csv
 import os
+from pprint import pprint
 
 class PyLooker:
 
     def __init__(self, clientID, clientSecret):
         self._client_id = clientID
         self._client_secret = clientSecret
-        self._domain = 'example'
+        self._domain = 'shippo'
         self._api_url = f'https://{self._domain}.looker.com:443/api/3.1'
         self._token = self._get_token()
         self._headers = {'Authorization': f'token {self._token}', }
@@ -33,6 +34,7 @@ class PyLooker:
             'client_secret': self._client_secret
         }
         x = self._request_post(endpoint, headers, payload)
+        print(x.json())
         return x.json()['access_token']
 
     def _get_all_users(self):
@@ -69,6 +71,11 @@ class PyLooker:
             print(x)
 
 
+
 looker_id = os.environ['LOOKER_ID']
 looker_secret = os.environ['LOOKER_SECRET']
 my_PyLooker = PyLooker(looker_id, looker_secret)
+x = my_PyLooker.all_users
+pprint(x)
+# my_PyLooker.change_emails_from_csv('looker_users.csv')
+# my_PyLooker.change_email_from_to('katherine_mkt@goshippo.com', 'katherine.nguyen@shippo.com')
