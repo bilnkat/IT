@@ -1,5 +1,6 @@
 from __future__ import print_function
 import requests
+import os
 import os.path
 import logging
 import csv
@@ -16,6 +17,7 @@ from datetime import datetime
 class PyGoogle:
 
     def __init__(self, customerId, domain=None):
+        self._mydir = 'Google_CSVs'
         self._scope = ['https://www.googleapis.com/auth/admin.directory.group',
                        'https://www.googleapis.com/auth/admin.directory.user',
                        'https://www.googleapis.com/auth/admin.directory.user']
@@ -28,6 +30,12 @@ class PyGoogle:
         self._headers = {'Authorization': f'Bearer {self._token}'}
         self.all_groups = self._get_all_groups()
         self.all_users = self._get_all_users()
+
+    def create_folder(self):
+        try:
+            os.mkdir(self._mydir)
+        except Exception as e:
+            print(e)
 
     def _flatten_json(self, y):
         out = {}
@@ -62,7 +70,9 @@ class PyGoogle:
 
     def _data_to_csv(self,data, name):
         df = pd.DataFrame.from_dict(data)
-        df.to_csv(f'{name}_{datetime.now()}.csv', encoding='utf-8')
+        self.create_folder()
+        mypath = os.path.join(self._mydir, f'{name}_{datetime.now()}.csv')
+        df.to_csv(mypath, encoding='utf-8')
 
     def _error_check(self, response):
         if not 200 <= response.status_code <= 299:
@@ -181,8 +191,8 @@ class PyGoogle:
         tmp = []
         endpoint = f'/users?domain={self._domain}&maxResults=500'
         x = self._request_get(endpoint)
-        tmp.extend(x.json()['users'])
         try:
+            tmp.extend(x.json()['users'])
             while x.json()['nextPageToken']:
                 nextPageToken = x.json()['nextPageToken']
                 x = self._request_get(endpoint + f'&pageToken={nextPageToken}')
@@ -190,6 +200,10 @@ class PyGoogle:
         except Exception as e:
             print(e)
         return tmp
+
+    def get_all_users_to_csv(self):
+        x = self.all_users
+        self._data_to_csv(x, 'Google_Users')
 
     def change_email(self, current_email, target_email):
         endpoint = f'/users/{current_email}'
@@ -216,14 +230,68 @@ class PyGoogle:
         x = self._request_delete(endpoint)
         return x
 
-    def delete_matching_alias_from_email(self, email, pattern):
+    def delete_matching_alias_pattern_from_email(self, email, pattern):
         for user in self.all_users:
             if user['primaryEmail'] == email:
                 for alias in user['aliases']:
                     if pattern in alias:
-                        print(alias)
-                        # self.delete_alias_from_email(email, alias)
+                        # print(email, alias)
+                        self.delete_alias_from_email(email, alias)
+
+    def delete_matching_alias_pattern_from_csv(self, csv_file_of_emails, pattern):
+        x = self._csv_to_list(csv_file_of_emails)
+        for each in x:
+            try:
+                self.delete_matching_alias_pattern_from_email(each[0], pattern)
+            except Exception as e:
+                print(e)
+
+    def add_alias_from_email(self, email, alias):
+        endpoint = f'/users/{email}/aliases'
+        payload = {
+            "alias": f"{alias}"
+        }
+        try:
+            print(alias)
+            self._request_post(endpoint, payload)
+        except Exception as e:
+            print(alias, e)
+
+
+    def add_aliases_from_csv(self, csv_file):
+        x = self._csv_to_list(csv_file)
+        for each in x:
+            self.add_alias_from_email(each[0], each[1])
+
+
+    def matching_alias_pattern_to_csv(self, pattern):
+        tmp = []
+        for user in self.all_users:
+            try:
+                for alias in user['aliases']:
+                    if pattern in alias:
+                        tmp.append({
+                            'primaryEmail':user['primaryEmail'],
+                            'alias':alias
+                        })
+            except Exception as e:
+                print(e)
+        self._data_to_csv(tmp, f'Emails_with_{pattern}_aliases')
 
 
 
-my_pygoogle = PyGoogle('','example.com')
+
+my_pygoogle = PyGoogle('', '')
+# x = my_pygoogle.get_all_groups_to_csv()
+# x = my_pygoogle.change_email('one.test@shippotest.com', 'one.user@shippotest.com')
+# x = my_pygoogle.change_emails_from_csv('test_csv.csv')
+# x = my_pygoogle.change_domain_for_all_groups('')
+# x = my_pygoogle.all_users
+x = my_pygoogle.get_all_groups_to_csv()
+# pprint(x)
+
+# x = my_pygoogle.delete_matching_alias_pattern_from_csv('', '')
+# x = my_pygoogle.add_aliases_from_csv('test2.csv')
+# x = my_pygoogle.matching_alias_pattern_to_csv('@goshippo.com')
+# pprint(x)
+
