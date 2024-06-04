@@ -9,7 +9,7 @@ from pprint import pprint
 
 class PyOkta:
     def __init__(self, api_token):
-        self._domain = 'https://example.okta.com'
+        self._domain = 'https://shippo.okta.com'
         self._api_token = api_token
         self._headers = {'authorization': 'SSWS ' + self._api_token, 'content-type': 'application/json'}
         self.all_users = self._get_all_users()
@@ -196,8 +196,11 @@ class PyOkta:
     # Removes a user from group based on email
     def remove_user_from_group_by_email(self, groupId, email):
         userData = self.get_user_data_from_email(email)
-        userId = userData['id']
-        self.remove_user_from_group_by_id(groupId, userId)
+        try:
+            userId = userData['id']
+            self.remove_user_from_group_by_id(groupId, userId)
+        except Exception as e:
+            print(e)
 
     # Removes users from group listed in a csv
     def remove_users_from_group_from_csv(self, groupId, csv_file_of_emails):
@@ -216,8 +219,14 @@ class PyOkta:
         x = self.get_group_id_by_group_name(groupName)
         endpoint = f'/api/v1/groups/{x}/users'
         r = self._request_get(endpoint)
-        z = [y['profile']['login'] for y in r.json()]
-        return z
+        tmp = []
+        for each in r.json():
+            try:
+                if each['status'] == 'ACTIVE':
+                    tmp.append([each['profile']['displayName'], each['profile']['login']])
+            except Exception as e:
+                print(e)
+        return tmp
 
     # Gets group members in a group name into a csv
     def get_group_members_by_group_name_to_csv(self, groupName):
@@ -352,6 +361,16 @@ class PyOkta:
 
 
 key = os.environ['OKTA_API_KEY']
-my_PyOkta = PyOkta(key)
+my_pyokta = PyOkta(key)
+# pprint(my_pyokta.all_users)
+# x = my_pyokta.get_all_users_to_csv()
+my_pyokta.add_users_to_group_from_csv('', 'test.csv')
+# my_PyOkta.get_group_members_by_group_name_to_csv('')
+# my_PyOkta.get_users_in_groups_with_this_filter_to_csv('aws_Core_')
+# x = my_PyOkta.get_users_from_app_name_to_csv('')
+# x = my_PyOkta.get_apps_from_user_email_to_csv('florian_eng@shippo.com')
+# x = my_pyokta.get_group_members_by_group_name_to_csv('')
 
-x = my_PyOkta.get_all_users_to_csv()
+
+# pprint(tmp_lst)
+# print(len(tmp_lst))
