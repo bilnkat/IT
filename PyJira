@@ -11,7 +11,7 @@ class PyJira:
 
     def __init__(self, email, token):
         self.api_token = token
-        self._url = "https://example.atlassian.net"
+        self._url = "https://shippo.atlassian.net"
         self._auth = HTTPBasicAuth(email, api_token)
         self._headers = {"Accept": "application/json"}
         self.all_users = self._get_all_users()
@@ -81,11 +81,15 @@ class PyJira:
         return x.json()
 
 api_token = os.environ['ATLASSIAN_TOKEN']
-email = "developeremail@example.com"
+email = "billy.general@goshippo.com"
 
 
 
 my_pyatlassian = PyJira(email, api_token)
-x = my_pyatlassian.all_users
-pprint(x)
-
+# x = my_pyatlassian.get_a_user('it-test')
+# x = my_pyatlassian.all_users
+# x = my_pyatlassian.get_account_id_from_email('it-test@goshippo.com')
+# x = my_pyatlassian.get_user_by_email('it-test@goshippo.com')
+# x = my_pyatlassian.get_user_detailed_by_email('it-test@goshippo.com')
+# pprint(x)
+# print(len(x))
