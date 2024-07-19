@@ -283,7 +283,6 @@ class PyGoogle:
 
 my_pygoogle = PyGoogle('', '')
 # x = my_pygoogle.get_all_groups_to_csv()
-# x = my_pygoogle.change_email('one.test@shippotest.com', 'one.user@shippotest.com')
 # x = my_pygoogle.change_emails_from_csv('test_csv.csv')
 # x = my_pygoogle.change_domain_for_all_groups('')
 # x = my_pygoogle.all_users
@@ -292,6 +291,5 @@ x = my_pygoogle.get_all_groups_to_csv()
 
 # x = my_pygoogle.delete_matching_alias_pattern_from_csv('', '')
 # x = my_pygoogle.add_aliases_from_csv('test2.csv')
-# x = my_pygoogle.matching_alias_pattern_to_csv('@goshippo.com')
 # pprint(x)
 
