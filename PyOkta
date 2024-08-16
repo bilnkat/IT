@@ -9,7 +9,7 @@ from pprint import pprint
 
 class PyOkta:
     def __init__(self, api_token):
-        self._domain = 'https://shippo.okta.com'
+        self._domain = 'https://domain.okta.com'
         self._api_token = api_token
         self._headers = {'authorization': 'SSWS ' + self._api_token, 'content-type': 'application/json'}
         self.all_users = self._get_all_users()
