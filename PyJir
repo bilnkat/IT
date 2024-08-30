@@ -1,0 +1,88 @@
+# This code sample uses the 'requests' library:
+# http://docs.python-requests.org
+import requests
+from requests.auth import HTTPBasicAuth
+import json
+import os
+from pprint import pprint
+import logging
+
+class PyJira:
+
+    def __init__(self, email, token):
+        self.api_token = token
+        self._url = ""
+        self._auth = HTTPBasicAuth(email, api_token)
+        self._headers = {"Accept": "application/json"}
+        self.all_users = self._get_all_users()
+        self.all_active_atlassian_users = self._get_all_active_atlassian_users()
+
+    def _error_check(self, response):
+        if not 200 <= response.status_code <= 299:
+            print('Error: ', response.status_code, response.reason, response.text)
+        else:
+            print('Success: ', response.status_code, response.url)
+
+    def _request_get(self, endpoint, args=None):
+        x = requests.get(url=self._url + endpoint, headers=self._headers, auth=self._auth, params=args)
+        self._error_check(x)
+        return x
+
+    def _request_put(self, endpoint, query, payload):
+        x = requests.put(url=self._url + endpoint, headers=self._headers, params=query, json=payload, auth=self._auth)
+        self._error_check(x)
+        return x
+
+    def _request_post(self, endpoint, payload):
+        x = requests.post(url=self._url + endpoint, headers=self._headers, json=payload)
+        self._error_check(x)
+        return x
+
+    def _request_delete(self, endpoint):
+        x = requests.delete(url=self._url + endpoint, headers=self._headers)
+        self._error_check(x)
+        return x
+
+    def _get_all_users(self):
+        tmp = []
+        endpoint = "/rest/api/3/users/search?maxResults=1000"
+        x = self._request_get(endpoint)
+        tmp.extend(x.json())
+        endpoint = "/rest/api/3/users/search?maxResults=1000&startAt=1000"
+        x = self._request_get(endpoint)
+        tmp.extend(x.json())
+        return tmp
+
+    def _get_all_active_atlassian_users(self):
+        tmp = []
+        for each in self.all_users:
+            if each['active'] == True:
+                if each['accountType'] == 'atlassian':
+                    tmp.append(each)
+        return tmp
+
+    def get_user_by_email(self, email):
+        for each in self.all_users:
+            try:
+                if email == each['emailAddress']:
+                    return each
+            except Exception as e:
+                logging.info(e)
+
+    def get_account_id_from_email(self, email):
+        x = self.get_user_by_email(email)
+        return x['accountId']
+
+    def get_user_detailed_by_email(self, email):
+        endpoint = '/rest/api/3/user/'
+        accountId = self.get_account_id_from_email(email)
+        query = {'accountId': accountId}
+        x = self._request_get(endpoint, query)
+        return x.json()
+
+api_token = os.environ['ATLASSIAN_TOKEN']
+email = ""
+
+
+
+my_pyatlassian = PyJira(email, api_token)
