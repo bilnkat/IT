@@ -362,15 +362,3 @@ class PyOkta:
 
 key = os.environ['OKTA_API_KEY']
 my_pyokta = PyOkta(key)
-# pprint(my_pyokta.all_users)
-# x = my_pyokta.get_all_users_to_csv()
-my_pyokta.add_users_to_group_from_csv('', 'test.csv')
-# my_PyOkta.get_group_members_by_group_name_to_csv('')
-# my_PyOkta.get_users_in_groups_with_this_filter_to_csv('aws_Core_')
-# x = my_PyOkta.get_users_from_app_name_to_csv('')
-# x = my_PyOkta.get_apps_from_user_email_to_csv('florian_eng@shippo.com')
-# x = my_pyokta.get_group_members_by_group_name_to_csv('')
-
-
-# pprint(tmp_lst)
-# print(len(tmp_lst))
