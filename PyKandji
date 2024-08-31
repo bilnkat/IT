@@ -13,7 +13,7 @@ class PyKandji:
 
     # Init function
     def __init__(self, token):
-        self._domain = 'https://shippo.clients.us-1.kandji.io/api'
+        self._domain = 'https://domain.clients.us-1.kandji.io/api'
         self._version = '/v1'
         self._headers = {'Authorization':f'Bearer {token}'}
         self.all_devices = self._get_all_devices()
@@ -160,8 +160,3 @@ class PyKandji:
 api_key = os.environ['KANDJI_TOKEN']
 
 my_kandji = PyKandji(api_key)
-x = my_kandji.all_devices
-# my_kandji.change_devices_blueprint_by_csv('MacOS_11_Users.csv', '920394af-ed03-4555-8513-c1efea095658')
-# x = my_kandji.get_devices_Id_by_email('adoronio@goshippo.com')
-pprint(x)
-print(len(x))
