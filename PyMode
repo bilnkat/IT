@@ -12,7 +12,7 @@ class Pymode:
         self.host     = 'https://app.mode.com'
         self.username = username
         self.password = password
-        self.ws = 'shippo'
+        self.ws = 'workspace'
         self.username_pw = f'{self.username}:{self.password}'.encode('utf-8')
         self.b64_byte = b64encode(self.username_pw)
         self.b64_str = self.b64_byte.decode('utf-8')
