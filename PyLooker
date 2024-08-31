@@ -8,7 +8,7 @@ class PyLooker:
     def __init__(self, clientID, clientSecret):
         self._client_id = clientID
         self._client_secret = clientSecret
-        self._domain = 'shippo'
+        self._domain = 'domain'
         self._api_url = f'https://{self._domain}.looker.com:443/api/3.1'
         self._token = self._get_token()
         self._headers = {'Authorization': f'token {self._token}', }
@@ -75,7 +75,3 @@ class PyLooker:
 looker_id = os.environ['LOOKER_ID']
 looker_secret = os.environ['LOOKER_SECRET']
 my_PyLooker = PyLooker(looker_id, looker_secret)
-x = my_PyLooker.all_users
-pprint(x)
-# my_PyLooker.change_emails_from_csv('looker_users.csv')
-# my_PyLooker.change_email_from_to('katherine_mkt@goshippo.com', 'katherine.nguyen@shippo.com')
